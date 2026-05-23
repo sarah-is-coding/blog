@@ -13,20 +13,22 @@ We've all been there. You rebased your branch, cleaned up your commits, and now 
 
 ## The problem with `--force`
 
-When you rebase or amend commits, you rewrite history. Git sees your local branch and the remote branch as diverged — they no longer share the same tip commit. A normal `git push` will refuse to overwrite that. So you reach for `--force`.
+When you rebase or amend commits, you rewrite history. Git sees your local branch and the remote branch as diverged — meaning they've gone in different directions from a common point and no longer share the same tip commit. Think of it like two people editing the same document simultaneously: once both make changes, neither version is simply "ahead" of the other. A normal `git push` will refuse to overwrite that. So you reach for `--force`.
 
 The issue is that `--force` is absolute. It says: _my version is correct, overwrite whatever is on the remote, no questions asked_. If a teammate pushed new commits to that branch while you were rebasing, `--force` will silently delete them.
 
 <Mermaid chart={`gitGraph
-   commit id: "A"
-   commit id: "B"
+   commit id: "shared history"
+   commit id: "more history"
    branch my-feature
-   commit id: "C"
+   commit id: "your commit"
    checkout main
-   commit id: "D (teammate)"
+   commit id: "teammate pushes"
    checkout my-feature
-   commit id: "E (your rebase)"
+   commit id: "your rebase"
 `} />
+
+_Each node is a commit — a saved snapshot of the code at a point in time. After you rebase, your local `my-feature` and the remote `my-feature` have gone in different directions: the remote has `teammate pushes`, yours has `your rebase`. A `--force` push overwrites the remote with your version, silently erasing your teammate's commit._
 
 ```bash
 # ⚠️ This doesn't care what's already on the remote
