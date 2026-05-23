@@ -1,0 +1,102 @@
+---
+title: 'git push --force-with-lease: The Safer Force Push'
+date: '2026-05-23'
+lastmod: '2026-05-23'
+tags: ['git']
+draft: false
+summary: 'A deep dive into git push --force-with-lease — what it does, why plain --force is dangerous, and when to actually use it.'
+---
+
+We've all been there. You rebased your branch, cleaned up your commits, and now git is telling you to force push. Your finger hovers over `--force`. You do it. And then a teammate pings you: "hey, did you just wipe my commits?"
+
+`--force-with-lease` exists specifically to prevent that. Here's how it works.
+
+## The problem with `--force`
+
+When you rebase or amend commits, you rewrite history. Git sees your local branch and the remote branch as diverged — they no longer share the same tip commit. A normal `git push` will refuse to overwrite that. So you reach for `--force`.
+
+The issue is that `--force` is absolute. It says: _my version is correct, overwrite whatever is on the remote, no questions asked_. If a teammate pushed new commits to that branch while you were rebasing, `--force` will silently delete them.
+
+<Mermaid chart={`gitGraph
+   commit id: "A"
+   commit id: "B"
+   branch my-feature
+   commit id: "C"
+   checkout main
+   commit id: "D (teammate)"
+   checkout my-feature
+   commit id: "E (your rebase)"
+`} />
+
+```bash
+# ⚠️ This doesn't care what's already on the remote
+git push --force origin my-feature
+```
+
+This is especially risky on shared branches.
+
+## What `--force-with-lease` does differently
+
+`--force-with-lease` adds a safety check. Before overwriting the remote, Git verifies that the remote branch tip matches what _you last fetched_. If someone else pushed in the meantime, your push fails — loudly, before any damage is done.
+
+```bash
+# ✅ This will fail if the remote has commits you haven't seen
+git push --force-with-lease origin my-feature
+```
+
+Think of it as: "force push, but only if nothing has changed since I last looked."
+
+## Side by side
+
+| Command | What it does | Risk |
+| --- | --- | --- |
+| `git push` | Pushes if no divergence, refuses otherwise | Safe, but won't work after a rebase |
+| `git push --force` | Overwrites remote unconditionally | Can delete teammates' commits |
+| `git push --force-with-lease` | Overwrites only if remote matches your last fetch | Safe for rebased branches |
+
+## A typical workflow
+
+Here's what using it actually looks like day-to-day:
+
+```bash:cleanup-and-push.sh
+# 1. Rebase your branch onto main to clean up history
+git fetch origin
+git rebase origin/main
+
+# 2. Force push safely — will fail if someone else pushed in the meantime
+git push --force-with-lease origin my-feature
+```
+
+If the push fails, it means the remote changed since your last fetch. Fix it by fetching and rebasing again:
+
+```bash
+git fetch origin
+git rebase origin/my-feature
+git push --force-with-lease origin my-feature
+```
+
+## The one gotcha
+
+`--force-with-lease` checks your local ref — specifically, what your remote-tracking branch (`origin/my-feature`) points to. If you ran `git fetch` right before pushing, that ref is up to date, and the lease check passes — even if new commits exist on the remote.
+
+> ⚠️ Running `git fetch` before `git push --force-with-lease` effectively defeats the safety check. The lease only protects you if your local remote-tracking ref is stale.
+
+In practice, just don't `git fetch` right before a force push without also reviewing what came in.
+
+## When to use it
+
+- After rebasing a feature branch onto `main`
+- After amending commits with `git commit --amend`
+- Cleaning up a PR with interactive rebase (`git rebase -i`) before merging
+- Any time git refuses a push because of diverged history
+
+## When not to use it
+
+- On `main` or any shared long-lived branch — rewriting shared history causes problems for everyone, regardless of which force flag you use
+- When you actually want to discard remote commits intentionally (rare, and worth double-checking)
+
+---
+
+`--force-with-lease` won't save you from every mistake, but it closes the most common one: the silent overwrite. It's a small habit that makes force pushing a lot less scary to do — and a lot less scary for the people who work on the same branches as you.[^1]
+
+[^1]: For the full details, see the [official Git documentation on push options](https://git-scm.com/docs/git-push#Documentation/git-push.txt---no-force-with-lease).
